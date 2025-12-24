@@ -1,5 +1,6 @@
 import pygame
 import chess
+import os
 from typing import Optional, Tuple
 
 class ChessBoard:
@@ -28,18 +29,39 @@ class ChessBoard:
         self.selected_square = None
         self.valid_moves = []
         
+        # Last move tracking for arrow visualization
+        self.last_move = None
+        
         # Load piece images
         self.load_pieces()
         
     def load_pieces(self):
-        """Load chess piece images."""
-        # Pieces will be drawn as shapes, no need for font
-        self.pieces = {
-            'p': 'pawn', 'r': 'rook', 'n': 'knight', 
-            'b': 'bishop', 'q': 'queen', 'k': 'king',
-            'P': 'pawn', 'R': 'rook', 'N': 'knight',
-            'B': 'bishop', 'Q': 'queen', 'K': 'king'
+        """Load chess piece images from PNG files."""
+        self.pieces = {}
+        pieces_dir = "pieces"
+        
+        # Map piece symbols to filenames
+        piece_files = {
+            'P': 'wP', 'N': 'wN', 'B': 'wB', 'R': 'wR', 'Q': 'wQ', 'K': 'wK',
+            'p': 'bP', 'n': 'bN', 'b': 'bB', 'r': 'bR', 'q': 'bQ', 'k': 'bK'
         }
+        
+        piece_size = int(self.square_size * 0.8)
+        
+        for symbol, filename in piece_files.items():
+            png_path = os.path.join(pieces_dir, f"{filename}.png")
+            
+            if os.path.exists(png_path):
+                try:
+                    # Load PNG and scale it
+                    image = pygame.image.load(png_path)
+                    image = pygame.transform.smoothscale(image, (piece_size, piece_size))
+                    self.pieces[symbol] = image
+                except Exception as e:
+                    print(f"Error loading {filename}: {e}")
+        
+        if not self.pieces:
+            print("Warning: No chess pieces loaded! Run download_pieces.py and convert_pieces.py first.")
     
     def draw_board(self):
         """Draw the chess board."""
@@ -84,93 +106,61 @@ class ChessBoard:
         self.screen.blit(s, (col * self.square_size, row * self.square_size))
     
     def draw_pieces(self):
-        """Draw chess pieces on the board."""
+        """Draw chess pieces on the board using images."""
         for square in chess.SQUARES:
             piece = self.board.piece_at(square)
             if piece:
                 row = 7 - (square // 8)
                 col = square % 8
                 
-                # Get piece type
+                # Get piece image
                 symbol = piece.symbol()
-                piece_type = self.pieces[symbol]
+                piece_image = self.pieces.get(symbol)
                 
-                # Calculate position
-                center_x = col * self.square_size + self.square_size // 2
-                center_y = row * self.square_size + self.square_size // 2
-                size = int(self.square_size * 0.35)
-                
-                # Colors
-                if piece.color == chess.WHITE:
-                    fill_color = (240, 240, 240)
-                    outline_color = (60, 60, 60)
-                else:
-                    fill_color = (40, 40, 40)
-                    outline_color = (220, 220, 220)
-                
-                # Draw different shapes based on piece type
-                if piece_type == 'pawn':
-                    # Small circle
-                    pygame.draw.circle(self.screen, fill_color, (center_x, center_y), size)
-                    pygame.draw.circle(self.screen, outline_color, (center_x, center_y), size, 3)
-                
-                elif piece_type == 'rook':
-                    # Rectangle with battlements
-                    rect = pygame.Rect(center_x - size, center_y - size, size * 2, size * 2)
-                    pygame.draw.rect(self.screen, fill_color, rect)
-                    pygame.draw.rect(self.screen, outline_color, rect, 3)
-                    # Battlements
-                    batt_size = size // 3
-                    pygame.draw.rect(self.screen, outline_color, 
-                                   (center_x - size, center_y - size, batt_size, batt_size), 3)
-                    pygame.draw.rect(self.screen, outline_color,
-                                   (center_x + size - batt_size, center_y - size, batt_size, batt_size), 3)
-                
-                elif piece_type == 'knight':
-                    # Triangle
-                    points = [
-                        (center_x, center_y - size),
-                        (center_x - size, center_y + size),
-                        (center_x + size, center_y + size)
-                    ]
-                    pygame.draw.polygon(self.screen, fill_color, points)
-                    pygame.draw.polygon(self.screen, outline_color, points, 3)
-                
-                elif piece_type == 'bishop':
-                    # Diamond
-                    points = [
-                        (center_x, center_y - size),
-                        (center_x + size, center_y),
-                        (center_x, center_y + size),
-                        (center_x - size, center_y)
-                    ]
-                    pygame.draw.polygon(self.screen, fill_color, points)
-                    pygame.draw.polygon(self.screen, outline_color, points, 3)
-                
-                elif piece_type == 'queen':
-                    # Circle with crown points
-                    pygame.draw.circle(self.screen, fill_color, (center_x, center_y), size)
-                    pygame.draw.circle(self.screen, outline_color, (center_x, center_y), size, 3)
-                    # Crown points (5 small circles on top)
-                    crown_radius = size // 5
-                    for i in range(5):
-                        angle = (i * 72 - 90) * 3.14159 / 180
-                        px = center_x + int(size * 0.7 * pygame.math.Vector2(1, 0).rotate_rad(angle).x)
-                        py = center_y + int(size * 0.7 * pygame.math.Vector2(1, 0).rotate_rad(angle).y)
-                        pygame.draw.circle(self.screen, outline_color, (px, py), crown_radius)
-                
-                elif piece_type == 'king':
-                    # Circle with cross on top
-                    pygame.draw.circle(self.screen, fill_color, (center_x, center_y), size)
-                    pygame.draw.circle(self.screen, outline_color, (center_x, center_y), size, 3)
-                    # Cross
-                    cross_size = size // 2
-                    pygame.draw.line(self.screen, outline_color,
-                                   (center_x, center_y - cross_size),
-                                   (center_x, center_y + cross_size), 4)
-                    pygame.draw.line(self.screen, outline_color,
-                                   (center_x - cross_size, center_y),
-                                   (center_x + cross_size, center_y), 4)
+                if piece_image:
+                    # Calculate position (center the image)
+                    x = col * self.square_size + (self.square_size - piece_image.get_width()) // 2
+                    y = row * self.square_size + (self.square_size - piece_image.get_height()) // 2
+                    
+                    # Draw the piece
+                    self.screen.blit(piece_image, (x, y))
+    
+    def draw_arrow(self, from_square: int, to_square: int, color=(50, 150, 50), width=8):
+        """Draw an arrow from one square to another."""
+        # Calculate start and end positions
+        from_row = 7 - (from_square // 8)
+        from_col = from_square % 8
+        to_row = 7 - (to_square // 8)
+        to_col = to_square % 8
+        
+        start_x = from_col * self.square_size + self.square_size // 2
+        start_y = from_row * self.square_size + self.square_size // 2
+        end_x = to_col * self.square_size + self.square_size // 2
+        end_y = to_row * self.square_size + self.square_size // 2
+        
+        # Draw arrow line
+        pygame.draw.line(self.screen, color, (start_x, start_y), (end_x, end_y), width)
+        
+        # Draw arrowhead
+        import math
+        angle = math.atan2(end_y - start_y, end_x - start_x)
+        arrow_length = self.square_size // 3
+        arrow_angle = math.pi / 6  # 30 degrees
+        
+        # Left side of arrowhead
+        left_x = end_x - arrow_length * math.cos(angle - arrow_angle)
+        left_y = end_y - arrow_length * math.sin(angle - arrow_angle)
+        
+        # Right side of arrowhead
+        right_x = end_x - arrow_length * math.cos(angle + arrow_angle)
+        right_y = end_y - arrow_length * math.sin(angle + arrow_angle)
+        
+        # Draw filled triangle for arrowhead
+        pygame.draw.polygon(self.screen, color, [
+            (end_x, end_y),
+            (left_x, left_y),
+            (right_x, right_y)
+        ])
     
     def draw_highlights(self):
         """Draw highlights for selected square and valid moves."""
@@ -185,6 +175,11 @@ class ChessBoard:
         self.draw_board()
         self.draw_highlights()
         self.draw_pieces()
+        
+        # Draw arrow for last move
+        if self.last_move is not None:
+            self.draw_arrow(self.last_move.from_square, self.last_move.to_square)
+        
         pygame.display.flip()
     
     def get_square_from_mouse(self, pos: Tuple[int, int]) -> Optional[int]:
@@ -227,6 +222,7 @@ class ChessBoard:
     def make_move(self, move: chess.Move) -> bool:
         """Make a move on the board."""
         if move in self.board.legal_moves:
+            self.last_move = move  # Store for arrow visualization
             self.board.push(move)
             self.selected_square = None
             self.valid_moves = []
@@ -238,6 +234,7 @@ class ChessBoard:
         self.board.reset()
         self.selected_square = None
         self.valid_moves = []
+        self.last_move = None
     
     def is_game_over(self) -> bool:
         """Check if game is over."""
