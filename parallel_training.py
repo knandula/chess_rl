@@ -6,28 +6,6 @@ import numpy as np
 from rl_agent import ChessRLAgent
 from typing import List, Tuple
 import time
-import matplotlib
-import sys
-
-# Auto-detect best backend for the platform
-if sys.platform == 'darwin':  # macOS
-    try:
-        matplotlib.use('TkAgg')
-    except:
-        matplotlib.use('Qt5Agg')
-elif sys.platform.startswith('linux'):  # Linux
-    try:
-        matplotlib.use('Qt5Agg')
-    except:
-        try:
-            matplotlib.use('TkAgg')
-        except:
-            matplotlib.use('GTK3Agg')
-else:  # Windows
-    matplotlib.use('TkAgg')
-
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 
 class ParallelChessTrainer:
     """Multi-process parallel training optimized for RTX 4090."""
@@ -49,11 +27,6 @@ class ParallelChessTrainer:
         self.total_rewards = []
         self.game_lengths = []
         self.wins = {'white': 0, 'black': 0, 'draw': 0}
-        
-        # Live plotting setup
-        self.enable_live_plot = False
-        self.fig = None
-        self.ax = None
         
         print(f"Parallel Trainer initialized with {num_workers} workers on {self.device}")
         if torch.cuda.is_available():
@@ -112,112 +85,7 @@ class ParallelChessTrainer:
         
         return experiences, total_reward, moves, outcome
     
-    def setup_live_plot(self):
-        """Initialize live plotting with matplotlib."""
-        try:
-            plt.ion()  # Interactive mode
-            self.fig, self.ax = plt.subplots(figsize=(12, 6))
-            self.fig.suptitle('Training Progress', fontsize=18, fontweight='bold')
-            self.fig.tight_layout(pad=2.5, rect=[0, 0, 1, 0.95])
-            
-            # Set dark theme
-            self.fig.patch.set_facecolor('#1e1e1e')
-            self.ax.set_facecolor('#2d2d2d')
-            self.ax.tick_params(colors='white', labelsize=11)
-            self.ax.spines['bottom'].set_color('white')
-            self.ax.spines['left'].set_color('white')
-            self.ax.spines['top'].set_color('white')
-            self.ax.spines['right'].set_color('white')
-            self.ax.xaxis.label.set_color('white')
-            self.ax.yaxis.label.set_color('white')
-            
-            # Initial plot setup
-            self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
-            self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
-            self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
-            
-            # Show window and bring to front
-            plt.show(block=False)
-            plt.pause(0.1)
-            
-            # Platform-specific window management
-            try:
-                if sys.platform == 'darwin':  # macOS
-                    self.fig.canvas.manager.window.attributes('-topmost', 1)
-                    self.fig.canvas.manager.window.attributes('-topmost', 0)
-                elif hasattr(self.fig.canvas.manager, 'window'):
-                    # Try to raise window on Linux/Windows
-                    self.fig.canvas.manager.window.raise_()
-            except:
-                pass  # If window manager doesn't support this, just continue
-            
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
-            
-            self.enable_live_plot = True
-            print(f"Live plotting enabled - training progress window opened (backend: {matplotlib.get_backend()})")
-        
-        except Exception as e:
-            print(f"Warning: Could not initialize live plotting: {e}")
-            print("Training will continue without visualization.")
-            self.enable_live_plot = False
-    
-    def update_live_plot(self, episode):
-        """Update live plot showing training progress."""
-        if not self.enable_live_plot or self.fig is None:
-            return
-        
-        # Clear axis
-        self.ax.clear()
-        self.ax.set_facecolor('#2d2d2d')
-        
-        # Plot rewards with moving average
-        if len(self.total_rewards) > 0:
-            episodes = list(range(len(self.total_rewards)))
-            
-            # Raw rewards (semi-transparent)
-            self.ax.plot(episodes, self.total_rewards, color='cyan', alpha=0.3, linewidth=1, label='Raw Reward')
-            
-            # Moving average (prominent)
-            if len(self.total_rewards) > 10:
-                window = min(50, len(self.total_rewards) // 2)
-                if window > 1:
-                    moving_avg = np.convolve(self.total_rewards, np.ones(window)/window, mode='valid')
-                    avg_episodes = list(range(window-1, len(self.total_rewards)))
-                    self.ax.plot(avg_episodes, moving_avg, color='lime', linewidth=3, label=f'{window}-Game Average')
-            
-            # Zero line reference
-            self.ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
-            
-            # Labels and title
-            self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
-            self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
-            
-            # Legend with current stats
-            win_rate = (self.wins['white'] / max(episode, 1)) * 100
-            avg_reward = np.mean(self.total_rewards[-100:]) if len(self.total_rewards) >= 100 else np.mean(self.total_rewards)
-            
-            stats_text = f"Episode: {episode} | Win Rate: {win_rate:.1f}% | Avg Reward (last 100): {avg_reward:.2f} | ε: {self.agent.epsilon:.3f}"
-            self.ax.text(0.5, 1.02, stats_text, transform=self.ax.transAxes, 
-                        ha='center', color='yellow', fontsize=11, fontweight='bold')
-            
-            self.ax.legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white', 
-                          loc='upper left', fontsize=11)
-            self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
-            
-            # Set y-axis to show meaningful range
-            if len(self.total_rewards) > 10:
-                y_min = min(self.total_rewards)
-                y_max = max(self.total_rewards)
-                margin = (y_max - y_min) * 0.1
-                self.ax.set_ylim(y_min - margin, y_max + margin)
-        
-        # Update display
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
-        plt.pause(0.01)  # Small pause to ensure window updates
-    
-    def train_parallel(self, num_episodes=1000, update_interval=10, save_interval=100, visualize=False):
+    def train_parallel(self, num_episodes=1000, update_interval=10, save_interval=100):
         """
         Train using parallel game generation.
         
@@ -230,10 +98,6 @@ class ParallelChessTrainer:
         print(f"Batch size per update: {update_interval} games")
         print(f"Neural network batch size: {self.agent.batch_size}")
         print(f"Replay buffer capacity: {self.agent.replay_buffer.buffer.maxlen}")
-        
-        # Setup visualization if requested
-        if visualize:
-            self.setup_live_plot()
         
         episode = 0
         start_time = time.time()
@@ -293,10 +157,6 @@ class ParallelChessTrainer:
             # Update target network periodically
             if episode % 50 == 0:
                 self.agent.update_target_network()
-            
-            # Update live plots
-            if visualize and episode % 5 == 0:
-                self.update_live_plot(episode)
             
             # Print progress
             batch_time = time.time() - batch_start
@@ -367,8 +227,6 @@ def main():
                        help='Load existing model checkpoint')
     parser.add_argument('--lr', type=float, default=0.0005,
                        help='Learning rate (default: 0.0005)')
-    parser.add_argument('--visualize', action='store_true',
-                       help='Enable real-time metrics visualization')
     
     args = parser.parse_args()
     
@@ -393,8 +251,7 @@ def main():
     trainer.train_parallel(
         num_episodes=args.episodes,
         update_interval=args.batch,
-        save_interval=args.save_interval,
-        visualize=args.visualize
+        save_interval=args.save_interval
     )
 
 
