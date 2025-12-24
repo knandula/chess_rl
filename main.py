@@ -1,6 +1,7 @@
 import pygame
 import argparse
 import sys
+import os
 import chess
 from chess_board import ChessBoard
 from rl_agent import ChessRLAgent
@@ -16,6 +17,12 @@ def play_mode(agent_path=None):
     
     # Initialize agent
     agent = ChessRLAgent(epsilon=0.0)  # No exploration in play mode
+    
+    # Auto-load parallel-trained model if available
+    if agent_path is None and os.path.exists('chess_agent_final_parallel.pth'):
+        agent_path = 'chess_agent_final_parallel.pth'
+        print("Found parallel-trained model, loading automatically...")
+    
     if agent_path:
         try:
             agent.load(agent_path)
@@ -84,6 +91,11 @@ def watch_mode(agent_path=None):
     # Initialize agents
     agent_white = ChessRLAgent(epsilon=0.1)
     agent_black = ChessRLAgent(epsilon=0.1)
+    
+    # Auto-load parallel-trained model if available
+    if agent_path is None and os.path.exists('chess_agent_final_parallel.pth'):
+        agent_path = 'chess_agent_final_parallel.pth'
+        print("Found parallel-trained model, loading automatically...")
     
     if agent_path:
         try:
