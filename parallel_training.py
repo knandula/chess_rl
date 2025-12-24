@@ -6,6 +6,8 @@ import numpy as np
 from rl_agent import ChessRLAgent
 from typing import List, Tuple
 import time
+import matplotlib
+matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plotting
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
@@ -33,7 +35,7 @@ class ParallelChessTrainer:
         # Live plotting setup
         self.enable_live_plot = False
         self.fig = None
-        self.axes = None
+        self.ax = None
         
         print(f"Parallel Trainer initialized with {num_workers} workers on {self.device}")
         if torch.cuda.is_available():
@@ -95,131 +97,93 @@ class ParallelChessTrainer:
     def setup_live_plot(self):
         """Initialize live plotting with matplotlib."""
         plt.ion()  # Interactive mode
-        self.fig, self.axes = plt.subplots(2, 3, figsize=(15, 8))
-        self.fig.suptitle('Real-Time Training Metrics', fontsize=16, fontweight='bold')
-        self.fig.tight_layout(pad=3.5, rect=[0, 0, 1, 0.96])
+        self.fig, self.ax = plt.subplots(figsize=(12, 6))
+        self.fig.suptitle('Training Progress', fontsize=18, fontweight='bold')
+        self.fig.tight_layout(pad=2.5, rect=[0, 0, 1, 0.95])
         
         # Set dark theme
         self.fig.patch.set_facecolor('#1e1e1e')
-        for ax in self.axes.flat:
-            ax.set_facecolor('#2d2d2d')
-            ax.tick_params(colors='white')
-            ax.spines['bottom'].set_color('white')
-            ax.spines['left'].set_color('white')
-            ax.spines['top'].set_color('white')
-            ax.spines['right'].set_color('white')
-            ax.xaxis.label.set_color('white')
-            ax.yaxis.label.set_color('white')
-            ax.title.set_color('white')
+        self.ax.set_facecolor('#2d2d2d')
+        self.ax.tick_params(colors='white', labelsize=11)
+        self.ax.spines['bottom'].set_color('white')
+        self.ax.spines['left'].set_color('white')
+        self.ax.spines['top'].set_color('white')
+        self.ax.spines['right'].set_color('white')
+        self.ax.xaxis.label.set_color('white')
+        self.ax.yaxis.label.set_color('white')
         
+        # Initial plot setup
+        self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
+        self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
+        self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
+        
+        # Show window and bring to front
         plt.show(block=False)
+        plt.pause(0.1)
+        try:
+            self.fig.canvas.manager.window.attributes('-topmost', 1)
+            self.fig.canvas.manager.window.attributes('-topmost', 0)
+        except:
+            pass  # If window manager doesn't support this, just continue
+        self.fig.canvas.draw()
+        
         self.enable_live_plot = True
-        print("Live plotting enabled - metrics window opened")
+        print("Live plotting enabled - training progress window opened")
     
     def update_live_plot(self, episode):
-        """Update live plots with current statistics."""
+        """Update live plot showing training progress."""
         if not self.enable_live_plot or self.fig is None:
             return
         
-        # Clear all axes
-        for ax in self.axes.flat:
-            ax.clear()
-            ax.set_facecolor('#2d2d2d')
+        # Clear axis
+        self.ax.clear()
+        self.ax.set_facecolor('#2d2d2d')
         
-        # Plot 1: Rewards over time
-        if self.total_rewards:
-            episodes = list(range(len(self.total_rewards)))
-            self.axes[0, 0].plot(episodes, self.total_rewards, 'cyan', alpha=0.4, linewidth=1)
-            
-            # Moving average
-            if len(self.total_rewards) > 20:
-                window = min(50, len(self.total_rewards))
-                moving_avg = np.convolve(self.total_rewards, np.ones(window)/window, mode='valid')
-                self.axes[0, 0].plot(range(window-1, len(self.total_rewards)), moving_avg, 
-                                    'lime', linewidth=2, label=f'{window}-game avg')
-            
-            self.axes[0, 0].set_xlabel('Episode', color='white')
-            self.axes[0, 0].set_ylabel('Total Reward', color='white')
-            self.axes[0, 0].set_title('Episode Rewards', color='white', fontweight='bold')
-            self.axes[0, 0].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
-            self.axes[0, 0].grid(True, alpha=0.2, color='white')
-        
-        # Plot 2: Training Loss
-        if self.agent.losses:
-            losses = self.agent.losses[-2000:]  # Last 2000 steps
-            steps = list(range(len(self.agent.losses)-len(losses), len(self.agent.losses)))
-            
-            self.axes[0, 1].plot(steps, losses, 'orange', alpha=0.4, linewidth=1)
-            
-            # Moving average
-            if len(losses) > 20:
-                window = min(100, len(losses))
-                moving_avg = np.convolve(losses, np.ones(window)/window, mode='valid')
-                self.axes[0, 1].plot(range(steps[0]+window-1, steps[-1]+1), moving_avg, 
-                                    'red', linewidth=2, label=f'{window}-step avg')
-            
-            self.axes[0, 1].set_xlabel('Training Step', color='white')
-            self.axes[0, 1].set_ylabel('Loss (MSE)', color='white')
-            self.axes[0, 1].set_title('Training Loss', color='white', fontweight='bold')
-            self.axes[0, 1].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
-            self.axes[0, 1].grid(True, alpha=0.2, color='white')
-        
-        # Plot 3: Game Length
-        if self.game_lengths:
-            episodes = list(range(len(self.game_lengths)))
-            self.axes[0, 2].plot(episodes, self.game_lengths, 'magenta', alpha=0.4, linewidth=1)
-            
-            # Moving average
-            if len(self.game_lengths) > 20:
-                window = min(50, len(self.game_lengths))
-                moving_avg = np.convolve(self.game_lengths, np.ones(window)/window, mode='valid')
-                self.axes[0, 2].plot(range(window-1, len(self.game_lengths)), moving_avg, 
-                                    'yellow', linewidth=2, label=f'{window}-game avg')
-            
-            self.axes[0, 2].set_xlabel('Episode', color='white')
-            self.axes[0, 2].set_ylabel('Moves per Game', color='white')
-            self.axes[0, 2].set_title('Game Length', color='white', fontweight='bold')
-            self.axes[0, 2].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
-            self.axes[0, 2].grid(True, alpha=0.2, color='white')
-        
-        # Plot 4: Win/Loss/Draw Distribution
-        if episode > 0:
-            outcomes = ['White', 'Black', 'Draw']
-            counts = [self.wins['white'], self.wins['black'], self.wins['draw']]
-            colors_pie = ['#4CAF50', '#F44336', '#FFC107']
-            
-            self.axes[1, 0].pie(counts, labels=outcomes, autopct='%1.1f%%', 
-                               colors=colors_pie, startangle=90, textprops={'color': 'white'})
-            self.axes[1, 0].set_title('Game Outcomes', color='white', fontweight='bold')
-        
-        # Plot 5: Epsilon Decay
-        if self.agent.epsilon_history:
-            steps = list(range(len(self.agent.epsilon_history)))
-            self.axes[1, 1].plot(steps, self.agent.epsilon_history, 'deepskyblue', linewidth=2)
-            self.axes[1, 1].axhline(y=self.agent.epsilon_min, color='red', 
-                                   linestyle='--', alpha=0.5, label='Min ε')
-            self.axes[1, 1].set_xlabel('Episode', color='white')
-            self.axes[1, 1].set_ylabel('Epsilon (ε)', color='white')
-            self.axes[1, 1].set_title('Exploration Rate', color='white', fontweight='bold')
-            self.axes[1, 1].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
-            self.axes[1, 1].grid(True, alpha=0.2, color='white')
-        
-        # Plot 6: Recent Performance (last 100 games)
+        # Plot rewards with moving average
         if len(self.total_rewards) > 0:
-            recent_rewards = self.total_rewards[-100:]
-            recent_episodes = list(range(max(0, len(self.total_rewards)-100), len(self.total_rewards)))
+            episodes = list(range(len(self.total_rewards)))
             
-            self.axes[1, 2].bar(recent_episodes, recent_rewards, color='springgreen', alpha=0.6)
-            self.axes[1, 2].axhline(y=0, color='white', linestyle='-', alpha=0.3)
-            self.axes[1, 2].set_xlabel('Episode', color='white')
-            self.axes[1, 2].set_ylabel('Reward', color='white')
-            self.axes[1, 2].set_title('Recent Performance (Last 100 Games)', color='white', fontweight='bold')
-            self.axes[1, 2].grid(True, alpha=0.2, color='white')
+            # Raw rewards (semi-transparent)
+            self.ax.plot(episodes, self.total_rewards, color='cyan', alpha=0.3, linewidth=1, label='Raw Reward')
+            
+            # Moving average (prominent)
+            if len(self.total_rewards) > 10:
+                window = min(50, len(self.total_rewards) // 2)
+                if window > 1:
+                    moving_avg = np.convolve(self.total_rewards, np.ones(window)/window, mode='valid')
+                    avg_episodes = list(range(window-1, len(self.total_rewards)))
+                    self.ax.plot(avg_episodes, moving_avg, color='lime', linewidth=3, label=f'{window}-Game Average')
+            
+            # Zero line reference
+            self.ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+            
+            # Labels and title
+            self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
+            self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
+            
+            # Legend with current stats
+            win_rate = (self.wins['white'] / max(episode, 1)) * 100
+            avg_reward = np.mean(self.total_rewards[-100:]) if len(self.total_rewards) >= 100 else np.mean(self.total_rewards)
+            
+            stats_text = f"Episode: {episode} | Win Rate: {win_rate:.1f}% | Avg Reward (last 100): {avg_reward:.2f} | ε: {self.agent.epsilon:.3f}"
+            self.ax.text(0.5, 1.02, stats_text, transform=self.ax.transAxes, 
+                        ha='center', color='yellow', fontsize=11, fontweight='bold')
+            
+            self.ax.legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white', 
+                          loc='upper left', fontsize=11)
+            self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
+            
+            # Set y-axis to show meaningful range
+            if len(self.total_rewards) > 10:
+                y_min = min(self.total_rewards)
+                y_max = max(self.total_rewards)
+                margin = (y_max - y_min) * 0.1
+                self.ax.set_ylim(y_min - margin, y_max + margin)
         
         # Update display
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        plt.pause(0.001)
+        plt.pause(0.01)  # Small pause to ensure window updates
     
     def train_parallel(self, num_episodes=1000, update_interval=10, save_interval=100, visualize=False):
         """
