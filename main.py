@@ -289,10 +289,11 @@ def main():
                        help='Disable visualization during training')
     parser.add_argument('--metrics', action='store_true',
                        help='Show metrics dashboard during training')
-    ,
-            load_path=args.load
-    args = parser.parse_args()
     
+    
+    args = parser.parse_args()
+    load_path=args.load
+
     print("=" * 60)
     print("Chess Reinforcement Learning - Visualized Training")
     print("=" * 60)
