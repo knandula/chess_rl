@@ -6,6 +6,8 @@ import numpy as np
 from rl_agent import ChessRLAgent
 from typing import List, Tuple
 import time
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 class ParallelChessTrainer:
     """Multi-process parallel training optimized for RTX 4090."""
@@ -27,6 +29,11 @@ class ParallelChessTrainer:
         self.total_rewards = []
         self.game_lengths = []
         self.wins = {'white': 0, 'black': 0, 'draw': 0}
+        
+        # Live plotting setup
+        self.enable_live_plot = False
+        self.fig = None
+        self.axes = None
         
         print(f"Parallel Trainer initialized with {num_workers} workers on {self.device}")
         if torch.cuda.is_available():
@@ -85,7 +92,136 @@ class ParallelChessTrainer:
         
         return experiences, total_reward, moves, outcome
     
-    def train_parallel(self, num_episodes=1000, update_interval=10, save_interval=100):
+    def setup_live_plot(self):
+        """Initialize live plotting with matplotlib."""
+        plt.ion()  # Interactive mode
+        self.fig, self.axes = plt.subplots(2, 3, figsize=(15, 8))
+        self.fig.suptitle('Real-Time Training Metrics', fontsize=16, fontweight='bold')
+        self.fig.tight_layout(pad=3.5, rect=[0, 0, 1, 0.96])
+        
+        # Set dark theme
+        self.fig.patch.set_facecolor('#1e1e1e')
+        for ax in self.axes.flat:
+            ax.set_facecolor('#2d2d2d')
+            ax.tick_params(colors='white')
+            ax.spines['bottom'].set_color('white')
+            ax.spines['left'].set_color('white')
+            ax.spines['top'].set_color('white')
+            ax.spines['right'].set_color('white')
+            ax.xaxis.label.set_color('white')
+            ax.yaxis.label.set_color('white')
+            ax.title.set_color('white')
+        
+        plt.show(block=False)
+        self.enable_live_plot = True
+        print("Live plotting enabled - metrics window opened")
+    
+    def update_live_plot(self, episode):
+        """Update live plots with current statistics."""
+        if not self.enable_live_plot or self.fig is None:
+            return
+        
+        # Clear all axes
+        for ax in self.axes.flat:
+            ax.clear()
+            ax.set_facecolor('#2d2d2d')
+        
+        # Plot 1: Rewards over time
+        if self.total_rewards:
+            episodes = list(range(len(self.total_rewards)))
+            self.axes[0, 0].plot(episodes, self.total_rewards, 'cyan', alpha=0.4, linewidth=1)
+            
+            # Moving average
+            if len(self.total_rewards) > 20:
+                window = min(50, len(self.total_rewards))
+                moving_avg = np.convolve(self.total_rewards, np.ones(window)/window, mode='valid')
+                self.axes[0, 0].plot(range(window-1, len(self.total_rewards)), moving_avg, 
+                                    'lime', linewidth=2, label=f'{window}-game avg')
+            
+            self.axes[0, 0].set_xlabel('Episode', color='white')
+            self.axes[0, 0].set_ylabel('Total Reward', color='white')
+            self.axes[0, 0].set_title('Episode Rewards', color='white', fontweight='bold')
+            self.axes[0, 0].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
+            self.axes[0, 0].grid(True, alpha=0.2, color='white')
+        
+        # Plot 2: Training Loss
+        if self.agent.losses:
+            losses = self.agent.losses[-2000:]  # Last 2000 steps
+            steps = list(range(len(self.agent.losses)-len(losses), len(self.agent.losses)))
+            
+            self.axes[0, 1].plot(steps, losses, 'orange', alpha=0.4, linewidth=1)
+            
+            # Moving average
+            if len(losses) > 20:
+                window = min(100, len(losses))
+                moving_avg = np.convolve(losses, np.ones(window)/window, mode='valid')
+                self.axes[0, 1].plot(range(steps[0]+window-1, steps[-1]+1), moving_avg, 
+                                    'red', linewidth=2, label=f'{window}-step avg')
+            
+            self.axes[0, 1].set_xlabel('Training Step', color='white')
+            self.axes[0, 1].set_ylabel('Loss (MSE)', color='white')
+            self.axes[0, 1].set_title('Training Loss', color='white', fontweight='bold')
+            self.axes[0, 1].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
+            self.axes[0, 1].grid(True, alpha=0.2, color='white')
+        
+        # Plot 3: Game Length
+        if self.game_lengths:
+            episodes = list(range(len(self.game_lengths)))
+            self.axes[0, 2].plot(episodes, self.game_lengths, 'magenta', alpha=0.4, linewidth=1)
+            
+            # Moving average
+            if len(self.game_lengths) > 20:
+                window = min(50, len(self.game_lengths))
+                moving_avg = np.convolve(self.game_lengths, np.ones(window)/window, mode='valid')
+                self.axes[0, 2].plot(range(window-1, len(self.game_lengths)), moving_avg, 
+                                    'yellow', linewidth=2, label=f'{window}-game avg')
+            
+            self.axes[0, 2].set_xlabel('Episode', color='white')
+            self.axes[0, 2].set_ylabel('Moves per Game', color='white')
+            self.axes[0, 2].set_title('Game Length', color='white', fontweight='bold')
+            self.axes[0, 2].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
+            self.axes[0, 2].grid(True, alpha=0.2, color='white')
+        
+        # Plot 4: Win/Loss/Draw Distribution
+        if episode > 0:
+            outcomes = ['White', 'Black', 'Draw']
+            counts = [self.wins['white'], self.wins['black'], self.wins['draw']]
+            colors_pie = ['#4CAF50', '#F44336', '#FFC107']
+            
+            self.axes[1, 0].pie(counts, labels=outcomes, autopct='%1.1f%%', 
+                               colors=colors_pie, startangle=90, textprops={'color': 'white'})
+            self.axes[1, 0].set_title('Game Outcomes', color='white', fontweight='bold')
+        
+        # Plot 5: Epsilon Decay
+        if self.agent.epsilon_history:
+            steps = list(range(len(self.agent.epsilon_history)))
+            self.axes[1, 1].plot(steps, self.agent.epsilon_history, 'deepskyblue', linewidth=2)
+            self.axes[1, 1].axhline(y=self.agent.epsilon_min, color='red', 
+                                   linestyle='--', alpha=0.5, label='Min ε')
+            self.axes[1, 1].set_xlabel('Episode', color='white')
+            self.axes[1, 1].set_ylabel('Epsilon (ε)', color='white')
+            self.axes[1, 1].set_title('Exploration Rate', color='white', fontweight='bold')
+            self.axes[1, 1].legend(facecolor='#2d2d2d', edgecolor='white', labelcolor='white')
+            self.axes[1, 1].grid(True, alpha=0.2, color='white')
+        
+        # Plot 6: Recent Performance (last 100 games)
+        if len(self.total_rewards) > 0:
+            recent_rewards = self.total_rewards[-100:]
+            recent_episodes = list(range(max(0, len(self.total_rewards)-100), len(self.total_rewards)))
+            
+            self.axes[1, 2].bar(recent_episodes, recent_rewards, color='springgreen', alpha=0.6)
+            self.axes[1, 2].axhline(y=0, color='white', linestyle='-', alpha=0.3)
+            self.axes[1, 2].set_xlabel('Episode', color='white')
+            self.axes[1, 2].set_ylabel('Reward', color='white')
+            self.axes[1, 2].set_title('Recent Performance (Last 100 Games)', color='white', fontweight='bold')
+            self.axes[1, 2].grid(True, alpha=0.2, color='white')
+        
+        # Update display
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        plt.pause(0.001)
+    
+    def train_parallel(self, num_episodes=1000, update_interval=10, save_interval=100, visualize=False):
         """
         Train using parallel game generation.
         
@@ -98,6 +234,10 @@ class ParallelChessTrainer:
         print(f"Batch size per update: {update_interval} games")
         print(f"Neural network batch size: {self.agent.batch_size}")
         print(f"Replay buffer capacity: {self.agent.replay_buffer.buffer.maxlen}")
+        
+        # Setup visualization if requested
+        if visualize:
+            self.setup_live_plot()
         
         episode = 0
         start_time = time.time()
@@ -157,6 +297,10 @@ class ParallelChessTrainer:
             # Update target network periodically
             if episode % 50 == 0:
                 self.agent.update_target_network()
+            
+            # Update live plots
+            if visualize and episode % 5 == 0:
+                self.update_live_plot(episode)
             
             # Print progress
             batch_time = time.time() - batch_start
@@ -227,6 +371,8 @@ def main():
                        help='Load existing model checkpoint')
     parser.add_argument('--lr', type=float, default=0.0005,
                        help='Learning rate (default: 0.0005)')
+    parser.add_argument('--visualize', action='store_true',
+                       help='Enable real-time metrics visualization')
     
     args = parser.parse_args()
     
@@ -251,7 +397,8 @@ def main():
     trainer.train_parallel(
         num_episodes=args.episodes,
         update_interval=args.batch,
-        save_interval=args.save_interval
+        save_interval=args.save_interval,
+        visualize=args.visualize
     )
 
 
