@@ -60,6 +60,10 @@ class ChessTrainer:
             board.push(move)
             moves_count += 1
             
+            # Update display for arrow visualization
+            if self.visualize:
+                self.board_display.last_move = move
+            
             # Get next state
             next_state = None if board.is_game_over() else current_agent.board_to_tensor(board)
             

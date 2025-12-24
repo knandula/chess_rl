@@ -147,13 +147,24 @@ def watch_mode(agent_path=None):
     
     pygame.quit()
 
-def train_mode(episodes=100, visualize=True, show_metrics=False):
+def train_mode(episodes=100, visualize=True, show_metrics=False, load_path=None):
     """Train the AI with visualization."""
     print("Starting Training Mode...")
     
     # Initialize components
     board = ChessBoard()
     agent = ChessRLAgent()
+    
+    # Load existing model if provided
+    if load_path:
+        try:
+            agent.load(load_path)
+            print(f"Loaded existing model from {load_path}")
+            print("Continuing training from saved checkpoint...")
+        except Exception as e:
+            print(f"Could not load model from {load_path}: {e}")
+            print("Starting training from scratch...")
+    
     trainer = ChessTrainer(agent, board, visualize=visualize, delay=0.01)
     
     # Optional metrics dashboard
@@ -266,7 +277,8 @@ def main():
                        help='Disable visualization during training')
     parser.add_argument('--metrics', action='store_true',
                        help='Show metrics dashboard during training')
-    
+    ,
+            load_path=args.load
     args = parser.parse_args()
     
     print("=" * 60)

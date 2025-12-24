@@ -10,7 +10,7 @@ from typing import List, Tuple, Optional
 class ChessNet(nn.Module):
     """Neural network for evaluating chess positions."""
     
-    def __init__(self, input_size=768, hidden_size=512):
+    def __init__(self, input_size=768, hidden_size=2048):
         super(ChessNet, self).__init__()
         
         self.network = nn.Sequential(
@@ -20,9 +20,12 @@ class ChessNet(nn.Module):
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(hidden_size, 256),
+            nn.Linear(hidden_size, 1024),
             nn.ReLU(),
-            nn.Linear(256, 1)
+            nn.Dropout(0.2),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1)
         )
     
     def forward(self, x):
@@ -65,9 +68,9 @@ class ChessRLAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         
-        # Replay buffer
-        self.replay_buffer = ReplayBuffer(capacity=10000)
-        self.batch_size = 64
+        # Replay buffer (scaled for RTX 4090)
+        self.replay_buffer = ReplayBuffer(capacity=100000)
+        self.batch_size = 512
         
         # Statistics
         self.losses = []
@@ -103,7 +106,7 @@ class ChessRLAgent:
         return list(board.legal_moves)
     
     def select_action(self, board: chess.Board, training=True) -> Optional[chess.Move]:
-        """Select action using epsilon-greedy policy."""
+        """Select action using epsilon-greedy policy (GPU-optimized batch evaluation)."""
         legal_moves = self.get_legal_moves_list(board)
         
         if not legal_moves:
@@ -113,24 +116,28 @@ class ChessRLAgent:
         if training and random.random() < self.epsilon:
             return random.choice(legal_moves)
         
-        # Evaluate all legal moves
-        best_move = None
-        best_value = float('-inf')
-        
+        # Evaluate all legal moves in batch (GPU-optimized)
         with torch.no_grad():
+            # Create batch of all positions after legal moves
+            states_batch = []
             for move in legal_moves:
-                # Simulate move
                 board.push(move)
-                state = self.board_to_tensor(board)
-                value = self.policy_net(state).item()
+                states_batch.append(self.board_to_tensor(board))
                 board.pop()
+            
+            # Evaluate all positions in one forward pass
+            if states_batch:
+                states_tensor = torch.cat(states_batch, dim=0)
+                values = self.policy_net(states_tensor).squeeze()
                 
-                # Negate value if it's opponent's turn after move
-                value = -value
+                # Negate values (opponent's perspective)
+                values = -values
                 
-                if value > best_value:
-                    best_value = value
-                    best_move = move
+                # Get best move
+                best_idx = torch.argmax(values).item()
+                best_move = legal_moves[best_idx]
+            else:
+                best_move = legal_moves[0]
         
         return best_move
     
@@ -186,12 +193,21 @@ class ChessRLAgent:
         # Current Q values
         current_q_values = self.policy_net(states).squeeze()
         
-        # Next Q values
+        # Next Q values (batched for GPU)
         with torch.no_grad():
+            # Filter non-None next states
+            valid_next_states = [ns for ns in next_states if ns is not None]
+            valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]
+            
             next_q_values = torch.zeros(self.batch_size).to(self.device)
-            for i, next_state in enumerate(next_states):
-                if next_state is not None:
-                    next_q_values[i] = self.target_net(next_state).item()
+            if valid_next_states:
+                # Batch process all valid next states
+                next_states_tensor = torch.cat(valid_next_states, dim=0)
+                next_values = self.target_net(next_states_tensor).squeeze()
+                
+                # Assign back to correct positions
+                for idx, value in zip(valid_indices, next_values):
+                    next_q_values[idx] = value
         
         # Target Q values
         target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
