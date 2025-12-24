@@ -7,7 +7,25 @@ from rl_agent import ChessRLAgent
 from typing import List, Tuple
 import time
 import matplotlib
-matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plotting
+import sys
+
+# Auto-detect best backend for the platform
+if sys.platform == 'darwin':  # macOS
+    try:
+        matplotlib.use('TkAgg')
+    except:
+        matplotlib.use('Qt5Agg')
+elif sys.platform.startswith('linux'):  # Linux
+    try:
+        matplotlib.use('Qt5Agg')
+    except:
+        try:
+            matplotlib.use('TkAgg')
+        except:
+            matplotlib.use('GTK3Agg')
+else:  # Windows
+    matplotlib.use('TkAgg')
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
@@ -78,39 +96,53 @@ class ParallelChessTrainer:
             done = board.is_game_over()
             experiences.append((state, move, reward, next_state, done))
             
-            total_reward += reward
+        try:
+            plt.ion()  # Interactive mode
+            self.fig, self.ax = plt.subplots(figsize=(12, 6))
+            self.fig.suptitle('Training Progress', fontsize=18, fontweight='bold')
+            self.fig.tight_layout(pad=2.5, rect=[0, 0, 1, 0.95])
+            
+            # Set dark theme
+            self.fig.patch.set_facecolor('#1e1e1e')
+            self.ax.set_facecolor('#2d2d2d')
+            self.ax.tick_params(colors='white', labelsize=11)
+            self.ax.spines['bottom'].set_color('white')
+            self.ax.spines['left'].set_color('white')
+            self.ax.spines['top'].set_color('white')
+            self.ax.spines['right'].set_color('white')
+            self.ax.xaxis.label.set_color('white')
+            self.ax.yaxis.label.set_color('white')
+            
+            # Initial plot setup
+            self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
+            self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
+            self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
+            
+            # Show window and bring to front
+            plt.show(block=False)
+            plt.pause(0.1)
+            
+            # Platform-specific window management
+            try:
+                if sys.platform == 'darwin':  # macOS
+                    self.fig.canvas.manager.window.attributes('-topmost', 1)
+                    self.fig.canvas.manager.window.attributes('-topmost', 0)
+                elif hasattr(self.fig.canvas.manager, 'window'):
+                    # Try to raise window on Linux/Windows
+                    self.fig.canvas.manager.window.raise_()
+            except:
+                pass  # If window manager doesn't support this, just continue
+            
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+            
+            self.enable_live_plot = True
+            print(f"Live plotting enabled - training progress window opened (backend: {matplotlib.get_backend()})")
         
-        # Determine outcome
-        if board.is_game_over():
-            result = board.result()
-            if result == "1-0":
-                outcome = "white"
-            elif result == "0-1":
-                outcome = "black"
-            else:
-                outcome = "draw"
-        else:
-            outcome = "draw"
-        
-        return experiences, total_reward, moves, outcome
-    
-    def setup_live_plot(self):
-        """Initialize live plotting with matplotlib."""
-        plt.ion()  # Interactive mode
-        self.fig, self.ax = plt.subplots(figsize=(12, 6))
-        self.fig.suptitle('Training Progress', fontsize=18, fontweight='bold')
-        self.fig.tight_layout(pad=2.5, rect=[0, 0, 1, 0.95])
-        
-        # Set dark theme
-        self.fig.patch.set_facecolor('#1e1e1e')
-        self.ax.set_facecolor('#2d2d2d')
-        self.ax.tick_params(colors='white', labelsize=11)
-        self.ax.spines['bottom'].set_color('white')
-        self.ax.spines['left'].set_color('white')
-        self.ax.spines['top'].set_color('white')
-        self.ax.spines['right'].set_color('white')
-        self.ax.xaxis.label.set_color('white')
-        self.ax.yaxis.label.set_color('white')
+        except Exception as e:
+            print(f"Warning: Could not initialize live plotting: {e}")
+            print("Training will continue without visualization.")
+            self.enable_live_plot = False
         
         # Initial plot setup
         self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
