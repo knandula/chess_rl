@@ -96,6 +96,24 @@ class ParallelChessTrainer:
             done = board.is_game_over()
             experiences.append((state, move, reward, next_state, done))
             
+            total_reward += reward
+        
+        # Determine outcome
+        if board.is_game_over():
+            result = board.result()
+            if result == "1-0":
+                outcome = "white"
+            elif result == "0-1":
+                outcome = "black"
+            else:
+                outcome = "draw"
+        else:
+            outcome = "draw"
+        
+        return experiences, total_reward, moves, outcome
+    
+    def setup_live_plot(self):
+        """Initialize live plotting with matplotlib."""
         try:
             plt.ion()  # Interactive mode
             self.fig, self.ax = plt.subplots(figsize=(12, 6))
@@ -143,24 +161,6 @@ class ParallelChessTrainer:
             print(f"Warning: Could not initialize live plotting: {e}")
             print("Training will continue without visualization.")
             self.enable_live_plot = False
-        
-        # Initial plot setup
-        self.ax.set_xlabel('Episode', color='white', fontsize=13, fontweight='bold')
-        self.ax.set_ylabel('Total Reward', color='white', fontsize=13, fontweight='bold')
-        self.ax.grid(True, alpha=0.2, color='white', linestyle=':', linewidth=0.5)
-        
-        # Show window and bring to front
-        plt.show(block=False)
-        plt.pause(0.1)
-        try:
-            self.fig.canvas.manager.window.attributes('-topmost', 1)
-            self.fig.canvas.manager.window.attributes('-topmost', 0)
-        except:
-            pass  # If window manager doesn't support this, just continue
-        self.fig.canvas.draw()
-        
-        self.enable_live_plot = True
-        print("Live plotting enabled - training progress window opened")
     
     def update_live_plot(self, episode):
         """Update live plot showing training progress."""
